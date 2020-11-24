@@ -67,6 +67,7 @@ def dcos2k8s(app: Dict):
         print(k8s_yaml)
         print("---")
 
+    k8s_deployment["spec"]["replicas"] = app.get("instances", 1)
     k8s_yaml = yaml.dump(k8s_deployment, Dumper=yaml.Dumper)
     print(k8s_yaml)
 
