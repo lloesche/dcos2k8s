@@ -38,6 +38,10 @@ def dcos2k8s(app: Dict, output, args):
     k8s_deployment = get_k8s_definition(
         ["create", "deployment", f"--image={image}", name]
     )
+    if "cmd" in app and len(app["cmd"]) > 0:
+        cmd = app.get("cmd", "").split(" ")
+        k8s_deployment["spec"]["template"]["spec"]["containers"][0]["command"] = cmd
+
     if args.limit_resources or args.reserve_resources:
         cpus = app.get("cpus", 0)
         disk = app.get("disk", 0)
@@ -193,6 +197,7 @@ class DCOS:
 
     def app(self, name: str):
         keep = [
+            "cmd",
             "container",
             "env",
             "cpus",
@@ -211,6 +216,9 @@ class DCOS:
         app_url = f"service/marathon/v2/apps/{name}"
         log.debug(f"Fetching app {name}")
         app = self.fetch(app_url).get("app")
+        for key in list(app.keys()):
+            if key not in keep:
+                del app[key]
         log.debug(f"App definition: {pformat(app)}")
         for secret, source in app.get("secrets", {}).items():
             if not isinstance(source, dict):
@@ -220,9 +228,6 @@ class DCOS:
                 continue
             secret_data = self.secret(source)
             app["secrets"][secret] = secret_data
-        for key in list(app.keys()):
-            if key not in keep:
-                del app[key]
 
         for fetch_data in app.get("fetch", []):
             uri = str(fetch_data.get("uri", ""))
