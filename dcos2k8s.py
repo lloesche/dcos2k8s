@@ -42,8 +42,10 @@ def dcos2k8s(app: Dict, output, args):
         cpus = app.get("cpus", 0)
         disk = app.get("disk", 0)
         mem = app.get("mem", 0)
-        # gpu = app.get("gpu", 0)
+        gpu = app.get("gpu", 0)
         resources = {}
+        if gpu > 0:
+            gpu = int(gpu)
         if mem > 0:
             mem = f"{int(mem)}Mi"
             resources["memory"] = mem
@@ -56,6 +58,9 @@ def dcos2k8s(app: Dict, output, args):
             k8s_deployment["spec"]["template"]["spec"]["containers"][0]["resources"] = {}
             if args.limit_resources:
                 k8s_deployment["spec"]["template"]["spec"]["containers"][0]["resources"]["limits"] = dict(resources)
+                # gpu are only allowed in limits not in requests (https://kubernetes.io/docs/tasks/manage-gpus/scheduling-gpus/)
+                if gpu > 0:
+                    k8s_deployment["spec"]["template"]["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] = gpu
             if args.reserve_resources:
                 k8s_deployment["spec"]["template"]["spec"]["containers"][0]["resources"]["requests"] = dict(resources)
 
@@ -283,11 +288,11 @@ def get_arg_parser() -> ArgumentParser:
         type=str,
     )
     arg_parser.add_argument(
-        "--limit-resources",
-        help="Limit resources (default: False)",
+        "--no-limit-resources",
+        help="Don't limit resources (default: False)",
         dest="limit_resources",
-        action="store_true",
-        default=False,
+        action="store_false",
+        default=True,
     )
     arg_parser.add_argument(
         "--no-reserve-resources",
