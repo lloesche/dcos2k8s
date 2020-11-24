@@ -34,7 +34,9 @@ def dcos2k8s(app: Dict):
         ["create", "deployment", f"--image={image}", name]
     )
     if "env" in app and len(app["env"]) > 0:
-        k8s_deployment["spec"]["template"]["spec"]["containers"][0]["envFrom"] = [{"configMapRef": {"name": f"config-{name}"}}]
+        k8s_deployment["spec"]["template"]["spec"]["containers"][0]["envFrom"] = [
+            {"configMapRef": {"name": f"config-{name}"}}
+        ]
         k8s_configmap_template = get_k8s_definition(
             ["create", "configmap", f"config-{name}"]
         )
@@ -42,10 +44,25 @@ def dcos2k8s(app: Dict):
         for var_name, var_data in app.get("env", {}).items():
             # secrets are handeled differently from config maps
             if isinstance(var_data, Dict) and "secret" in var_data:
-                if not "env" in k8s_deployment["spec"]["template"]["spec"]["containers"][0]:
-                    k8s_deployment["spec"]["template"]["spec"]["containers"][0]["env"] = []
-                secret_data = {"name": var_name, "valueFrom": {"secretKeyRef": {"name": f"secret-{name}", "key": var_data["secret"]}}}
-                k8s_deployment["spec"]["template"]["spec"]["containers"][0]["env"].append(secret_data)
+                if (
+                    not "env"
+                    in k8s_deployment["spec"]["template"]["spec"]["containers"][0]
+                ):
+                    k8s_deployment["spec"]["template"]["spec"]["containers"][0][
+                        "env"
+                    ] = []
+                secret_data = {
+                    "name": var_name,
+                    "valueFrom": {
+                        "secretKeyRef": {
+                            "name": f"secret-{name}",
+                            "key": var_data["secret"],
+                        }
+                    },
+                }
+                k8s_deployment["spec"]["template"]["spec"]["containers"][0][
+                    "env"
+                ].append(secret_data)
                 continue
 
             k8s_configmap_template["data"][var_name] = var_data
