@@ -55,14 +55,22 @@ def dcos2k8s(app: Dict, output, args):
         if disk > 0:
             resources["ephemeral-storage"] = f"{int(disk)}Gi"
         if len(resources) > 0:
-            k8s_deployment["spec"]["template"]["spec"]["containers"][0]["resources"] = {}
+            k8s_deployment["spec"]["template"]["spec"]["containers"][0][
+                "resources"
+            ] = {}
             if args.limit_resources:
-                k8s_deployment["spec"]["template"]["spec"]["containers"][0]["resources"]["limits"] = dict(resources)
+                k8s_deployment["spec"]["template"]["spec"]["containers"][0][
+                    "resources"
+                ]["limits"] = dict(resources)
                 # gpu are only allowed in limits not in requests (https://kubernetes.io/docs/tasks/manage-gpus/scheduling-gpus/)
                 if gpu > 0:
-                    k8s_deployment["spec"]["template"]["spec"]["containers"][0]["resources"]["limits"]["nvidia.com/gpu"] = gpu
+                    k8s_deployment["spec"]["template"]["spec"]["containers"][0][
+                        "resources"
+                    ]["limits"]["nvidia.com/gpu"] = gpu
             if args.reserve_resources:
-                k8s_deployment["spec"]["template"]["spec"]["containers"][0]["resources"]["requests"] = dict(resources)
+                k8s_deployment["spec"]["template"]["spec"]["containers"][0][
+                    "resources"
+                ]["requests"] = dict(resources)
 
     if "env" in app and len(app["env"]) > 0:
         k8s_deployment["spec"]["template"]["spec"]["containers"][0]["envFrom"] = [
