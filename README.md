@@ -1,6 +1,6 @@
 # dcos2k8s
-Simple DC/OS app to K8S Deployment/Secrets/ConfigMaps converter.
-This tool is just to get you started. The resulting files WILL require manual editing!
+Simple DC/OS app (Service) to K8S Deployment/Secrets/ConfigMaps converter.
+This tool is just to get you started. The resulting files WILL LIKELY require manual editing!
 
 The tools `dcos` and `kubectl` must be installed on your system and available in your `$PATH`.
 You must be authenticated with the DC/OS cluster (`dcos auth login`) before running `dcos2k8s.py`.

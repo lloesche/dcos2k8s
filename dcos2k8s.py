@@ -7,7 +7,7 @@ import logging
 import sys
 from typing import List, Dict
 from argparse import ArgumentParser
-from pprint import pprint
+from pprint import pformat
 
 
 log_format = "%(asctime)s - %(levelname)s - %(message)s"
@@ -26,18 +26,39 @@ def main() -> None:
     dcos_app = dcos.app(args.app)
     output = open(args.out, "w") if args.out else sys.stdout
     try:
-        dcos2k8s(dcos_app, output)
+        dcos2k8s(dcos_app, output, args)
     finally:
         if output is not sys.stdout:
             output.close()
 
 
-def dcos2k8s(app: Dict, output):
+def dcos2k8s(app: Dict, output, args):
     name = app.get("id").strip("/").replace("/", "-")
     image = app.get("container", {}).get("docker", {}).get("image")
     k8s_deployment = get_k8s_definition(
         ["create", "deployment", f"--image={image}", name]
     )
+    if args.limit_resources or args.reserve_resources:
+        cpus = app.get("cpus", 0)
+        disk = app.get("disk", 0)
+        mem = app.get("mem", 0)
+        # gpu = app.get("gpu", 0)
+        resources = {}
+        if mem > 0:
+            mem = f"{int(mem)}Mi"
+            resources["memory"] = mem
+        if cpus > 0:
+            cpus = f"{int(cpus * 1000)}m"
+            resources["cpu"] = cpus
+        if disk > 0:
+            resources["ephemeral-storage"] = f"{int(disk)}Gi"
+        if len(resources) > 0:
+            k8s_deployment["spec"]["template"]["spec"]["containers"][0]["resources"] = {}
+            if args.limit_resources:
+                k8s_deployment["spec"]["template"]["spec"]["containers"][0]["resources"]["limits"] = dict(resources)
+            if args.reserve_resources:
+                k8s_deployment["spec"]["template"]["spec"]["containers"][0]["resources"]["requests"] = dict(resources)
+
     if "env" in app and len(app["env"]) > 0:
         k8s_deployment["spec"]["template"]["spec"]["containers"][0]["envFrom"] = [
             {"configMapRef": {"name": f"config-{name}"}}
@@ -177,6 +198,7 @@ class DCOS:
         app_url = f"service/marathon/v2/apps/{name}"
         log.debug(f"Fetching app {name}")
         app = self.fetch(app_url).get("app")
+        log.debug(f"App definition: {pformat(app)}")
         for secret, source in app.get("secrets", {}).items():
             if not isinstance(source, dict):
                 continue
@@ -259,6 +281,20 @@ def get_arg_parser() -> ArgumentParser:
         required=False,
         dest="out",
         type=str,
+    )
+    arg_parser.add_argument(
+        "--limit-resources",
+        help="Limit resources (default: False)",
+        dest="limit_resources",
+        action="store_true",
+        default=False,
+    )
+    arg_parser.add_argument(
+        "--no-reserve-resources",
+        help="Don't reserve resources (default: False)",
+        dest="reserve_resources",
+        action="store_false",
+        default=True,
     )
     return arg_parser
 
