@@ -3,8 +3,9 @@ Simple DC/OS app to K8S Deployment/Secrets/ConfigMaps converter.
 This tool is just to get you started. The resulting files WILL require manual editing!
 
 The tools `dcos` and `kubectl` must be installed on your system and available in your `$PATH`.
+You must be authenticated with the DC/OS cluster (`dcos auth login`) before running `dcos2k8s.py`.
 
-The script takes an arg `--app` followed by the name of the DC/OS app that should be converted to a K8S deployment.
+The script takes an arg `--app` followed by the name (`id`) of the DC/OS app that should be converted to a K8S deployment.
 Optionally instead of stdout an arg `--out` can specify a filename where generated YAML data is to be written to.
 
 For debugging `--verbose` can be specified.
