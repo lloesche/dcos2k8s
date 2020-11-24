@@ -1,10 +1,11 @@
 #!/usr/bin/env python
 import requests
-import json
+import yaml
+import base64
 import subprocess
 import logging
 import sys
-from typing import List
+from typing import List, Dict
 from argparse import ArgumentParser
 from pprint import pprint
 
@@ -22,8 +23,58 @@ def main() -> None:
         logging.getLogger().setLevel(logging.DEBUG)
 
     dcos = DCOS(args.dcos_cmd)
-    app = dcos.app(args.app)
-    pprint(app)
+    dcos_app = dcos.app(args.app)
+    dcos2k8s(dcos_app)
+
+
+def dcos2k8s(app: Dict):
+    name = app.get("id").strip("/")
+    image = app.get("container", {}).get("docker", {}).get("image")
+    k8s_deployment = get_k8s_definition(
+        ["create", "deployment", f"--image={image}", name]
+    )
+    if "env" in app and len(app["env"]) > 0:
+        k8s_deployment["spec"]["template"]["spec"]["containers"][0]["envFrom"] = [{"configMapRef": {"name": f"config-{name}"}}]
+        k8s_configmap_template = get_k8s_definition(
+            ["create", "configmap", f"config-{name}"]
+        )
+        k8s_configmap_template["data"] = {}
+        for var_name, var_data in app.get("env", {}).items():
+            # secrets are handeled differently from config maps
+            if isinstance(var_data, Dict) and "secret" in var_data:
+                if not "env" in k8s_deployment["spec"]["template"]["spec"]["containers"][0]:
+                    k8s_deployment["spec"]["template"]["spec"]["containers"][0]["env"] = []
+                secret_data = {"name": var_name, "valueFrom": {"secretKeyRef": {"name": f"secret-{name}", "key": var_data["secret"]}}}
+                k8s_deployment["spec"]["template"]["spec"]["containers"][0]["env"].append(secret_data)
+                continue
+
+            k8s_configmap_template["data"][var_name] = var_data
+        k8s_yaml = yaml.dump(k8s_configmap_template, Dumper=yaml.Dumper)
+        print(k8s_yaml)
+        print("---")
+
+    if "secrets" in app and len(app["secrets"]) > 0:
+        k8s_secret_template = get_k8s_definition(
+            ["create", "secret", "generic", f"secret-{name}"]
+        )
+        k8s_secret_template["data"] = {}
+        for secret, secret_data in app.get("secrets", {}).items():
+            k8s_secret_template["data"][secret] = base64.b64encode(
+                secret_data.encode("utf-8")
+            ).decode("utf-8")
+
+        k8s_yaml = yaml.dump(k8s_secret_template, Dumper=yaml.Dumper)
+        print(k8s_yaml)
+        print("---")
+
+    k8s_yaml = yaml.dump(k8s_deployment, Dumper=yaml.Dumper)
+    print(k8s_yaml)
+
+
+def get_k8s_definition(args: List):
+    cmd = ["kubectl", "--output=yaml", "--dry-run=client"] + args
+    k8syaml = run_cmd(cmd, "get kubectl YAML")
+    return yaml.load(k8syaml, Loader=yaml.Loader)
 
 
 class DCOS:
@@ -65,7 +116,7 @@ class DCOS:
             "upgradeStrategy",
         ]
         app_url = f"service/marathon/v2/apps/{name}"
-        log.info(f"Fetching app {name}")
+        log.debug(f"Fetching app {name}")
         app = self.fetch(app_url).get("app")
         for secret, source in app.get("secrets", {}).items():
             if not isinstance(source, dict):
@@ -136,6 +187,13 @@ def get_arg_parser() -> ArgumentParser:
         help="Name of the DC/OS cli binary (default: dcos)",
         default="dcos",
         dest="dcos_cmd",
+        type=str,
+    )
+    arg_parser.add_argument(
+        "--kubectl",
+        help="Name of the kubectl binary (default: kubectl)",
+        default="kubectl",
+        dest="kubectl_cmd",
         type=str,
     )
     return arg_parser
