@@ -67,7 +67,7 @@ def dcos2k8s(app: Dict):
 
             k8s_configmap_template["data"][var_name] = var_data
         k8s_yaml = yaml.dump(k8s_configmap_template, Dumper=yaml.Dumper)
-        print(k8s_yaml)
+        sys.stdout.write(k8s_yaml)
         print("---")
 
     if "secrets" in app and len(app["secrets"]) > 0:
@@ -81,12 +81,12 @@ def dcos2k8s(app: Dict):
             ).decode("utf-8")
 
         k8s_yaml = yaml.dump(k8s_secret_template, Dumper=yaml.Dumper)
-        print(k8s_yaml)
+        sys.stdout.write(k8s_yaml)
         print("---")
 
     k8s_deployment["spec"]["replicas"] = app.get("instances", 1)
     k8s_yaml = yaml.dump(k8s_deployment, Dumper=yaml.Dumper)
-    print(k8s_yaml)
+    sys.stdout.write(k8s_yaml)
 
 
 def get_k8s_definition(args: List):
