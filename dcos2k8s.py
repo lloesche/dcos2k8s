@@ -22,12 +22,17 @@ def main() -> None:
     if args.verbose:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    dcos = DCOS(args.dcos_cmd)
+    dcos = DCOS()
     dcos_app = dcos.app(args.app)
-    dcos2k8s(dcos_app)
+    output = open(args.out, "w") if args.out else sys.stdout
+    try:
+        dcos2k8s(dcos_app, output)
+    finally:
+        if output is not sys.stdout:
+            output.close()
 
 
-def dcos2k8s(app: Dict):
+def dcos2k8s(app: Dict, output):
     name = app.get("id").strip("/").replace("/", "-")
     image = app.get("container", {}).get("docker", {}).get("image")
     k8s_deployment = get_k8s_definition(
@@ -67,8 +72,8 @@ def dcos2k8s(app: Dict):
 
             k8s_configmap_template["data"][var_name] = var_data
         k8s_yaml = yaml.dump(k8s_configmap_template, Dumper=yaml.Dumper)
-        sys.stdout.write(k8s_yaml)
-        print("---")
+        output.write(k8s_yaml)
+        output.write("---\n")
 
     if "fetch" in app and len(app["fetch"]) > 0:
         k8s_fileconfigmap_template = get_k8s_definition(
@@ -104,8 +109,8 @@ def dcos2k8s(app: Dict):
                 ].append({"key": filename, "path": filename})
 
             k8s_yaml = yaml.dump(k8s_fileconfigmap_template, Dumper=yaml.Dumper)
-            sys.stdout.write(k8s_yaml)
-            print("---")
+            output.write(k8s_yaml)
+            output.write("---\n")
 
     if "secrets" in app and len(app["secrets"]) > 0:
         k8s_secret_template = get_k8s_definition(
@@ -118,12 +123,12 @@ def dcos2k8s(app: Dict):
             ).decode("utf-8")
 
         k8s_yaml = yaml.dump(k8s_secret_template, Dumper=yaml.Dumper)
-        sys.stdout.write(k8s_yaml)
-        print("---")
+        output.write(k8s_yaml)
+        output.write("---\n")
 
     k8s_deployment["spec"]["replicas"] = app.get("instances", 1)
     k8s_yaml = yaml.dump(k8s_deployment, Dumper=yaml.Dumper)
-    sys.stdout.write(k8s_yaml)
+    output.write(k8s_yaml)
 
 
 def get_k8s_definition(args: List):
@@ -133,14 +138,13 @@ def get_k8s_definition(args: List):
 
 
 class DCOS:
-    def __init__(self, cmd: str):
-        self.cmd = cmd
+    def __init__(self):
         self.url = None
         self.token = None
         self.load_cluster_details()
 
     def load_cluster_details(self):
-        url, token = get_cluster_details(self.cmd)
+        url, token = get_cluster_details()
         self.url = url.strip("/")
         self.token = token
 
@@ -204,16 +208,16 @@ class DCOS:
         return secret
 
 
-def get_cluster_details(dcos_cmd: str) -> List:
+def get_cluster_details() -> List:
     url = token = None
 
     dcos_token_args = ["config", "show", "core.dcos_acs_token"]
     dcos_baseurl_args = ["config", "show", "core.dcos_url"]
 
-    cmd = [dcos_cmd] + dcos_token_args
+    cmd = ["dcos"] + dcos_token_args
     token = run_cmd(cmd, "retrieve DC/OS auth token")
 
-    cmd = [dcos_cmd] + dcos_baseurl_args
+    cmd = ["dcos"] + dcos_baseurl_args
     url = run_cmd(cmd, "retrieve DC/OS cluster URL")
 
     return url, token
@@ -249,17 +253,11 @@ def get_arg_parser() -> ArgumentParser:
         type=str,
     )
     arg_parser.add_argument(
-        "--dcos",
-        help="Name of the DC/OS cli binary (default: dcos)",
-        default="dcos",
-        dest="dcos_cmd",
-        type=str,
-    )
-    arg_parser.add_argument(
-        "--kubectl",
-        help="Name of the kubectl binary (default: kubectl)",
-        default="kubectl",
-        dest="kubectl_cmd",
+        "--out",
+        help="Name file to output generated yaml to (default: stdout)",
+        default=None,
+        required=False,
+        dest="out",
         type=str,
     )
     return arg_parser
