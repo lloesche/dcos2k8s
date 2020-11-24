@@ -70,6 +70,43 @@ def dcos2k8s(app: Dict):
         sys.stdout.write(k8s_yaml)
         print("---")
 
+    if "fetch" in app and len(app["fetch"]) > 0:
+        k8s_fileconfigmap_template = get_k8s_definition(
+            ["create", "configmap", f"config-files-{name}"]
+        )
+        k8s_fileconfigmap_template["binaryData"] = {}
+        for fetch_data in app.get("fetch", []):
+            if "content" in fetch_data and "filename" in fetch_data:
+                b64content = base64.b64encode(fetch_data["content"]).decode("utf-8")
+                filename = fetch_data["filename"]
+                k8s_fileconfigmap_template["binaryData"][filename] = b64content
+
+        if len(k8s_fileconfigmap_template["binaryData"]) > 0:
+            k8s_deployment["spec"]["template"]["spec"]["containers"][0][
+                "volumeMounts"
+            ] = [
+                {
+                    "name": "config-files",
+                    "mountPath": "/mnt/mesos/sandbox",
+                    "readOnly": True,
+                }
+            ]
+            k8s_deployment["spec"]["template"]["spec"]["volumes"] = [
+                {
+                    "name": "config-files",
+                    "configMap": {"name": f"config-files-{name}", "items": []},
+                }
+            ]
+
+            for filename in k8s_fileconfigmap_template["binaryData"].keys():
+                k8s_deployment["spec"]["template"]["spec"]["volumes"][0]["configMap"][
+                    "items"
+                ].append({"key": filename, "path": filename})
+
+            k8s_yaml = yaml.dump(k8s_fileconfigmap_template, Dumper=yaml.Dumper)
+            sys.stdout.write(k8s_yaml)
+            print("---")
+
     if "secrets" in app and len(app["secrets"]) > 0:
         k8s_secret_template = get_k8s_definition(
             ["create", "secret", "generic", f"secret-{name}"]
@@ -147,6 +184,17 @@ class DCOS:
         for key in list(app.keys()):
             if key not in keep:
                 del app[key]
+
+        for fetch_data in app.get("fetch", []):
+            uri = str(fetch_data.get("uri", ""))
+            if not uri.startswith(("http://", "https://")):
+                continue
+            filename = uri.split("/")[-1]
+            r = requests.get(uri, allow_redirects=True)
+            if r.status_code == 200:
+                fetch_data["content"] = r.content
+                fetch_data["filename"] = filename
+
         return app
 
     def secret(self, name: str):
