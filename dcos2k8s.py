@@ -28,7 +28,7 @@ def main() -> None:
 
 
 def dcos2k8s(app: Dict):
-    name = app.get("id").strip("/")
+    name = app.get("id").strip("/").replace("/", "-")
     image = app.get("container", {}).get("docker", {}).get("image")
     k8s_deployment = get_k8s_definition(
         ["create", "deployment", f"--image={image}", name]
