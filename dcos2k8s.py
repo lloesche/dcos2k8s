@@ -125,21 +125,26 @@ def dcos2k8s(app: Dict, output, args):
                 k8s_fileconfigmap_template["binaryData"][filename] = b64content
 
         if len(k8s_fileconfigmap_template["binaryData"]) > 0:
+            ensure_list(
+                "volumeMounts",
+                k8s_deployment["spec"]["template"]["spec"]["containers"][0],
+            )
+            ensure_list("volumes", k8s_deployment["spec"]["template"]["spec"])
             k8s_deployment["spec"]["template"]["spec"]["containers"][0][
                 "volumeMounts"
-            ] = [
+            ].append(
                 {
                     "name": "config-files",
                     "mountPath": "/mnt/mesos/sandbox",
                     "readOnly": True,
                 }
-            ]
-            k8s_deployment["spec"]["template"]["spec"]["volumes"] = [
+            )
+            k8s_deployment["spec"]["template"]["spec"]["volumes"].append(
                 {
                     "name": "config-files",
                     "configMap": {"name": f"config-files-{name}", "items": []},
                 }
-            ]
+            )
 
             for filename in k8s_fileconfigmap_template["binaryData"].keys():
                 k8s_deployment["spec"]["template"]["spec"]["volumes"][0]["configMap"][
@@ -167,6 +172,11 @@ def dcos2k8s(app: Dict, output, args):
     k8s_deployment["spec"]["replicas"] = app.get("instances", 1)
     k8s_yaml = yaml.dump(k8s_deployment, Dumper=yaml.Dumper)
     output.write(k8s_yaml)
+
+
+def ensure_list(key, dst):
+    if isinstance(dst, Dict) and key not in dst:
+        dst[key] = []
 
 
 def get_k8s_definition(args: List):
