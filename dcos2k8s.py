@@ -35,12 +35,54 @@ def main() -> None:
 def dcos2k8s(app: Dict, output, args):
     name = app.get("id").strip("/").replace("/", "-")
     image = app.get("container", {}).get("docker", {}).get("image")
+    #labels = app.get("labels", {})
+    #for label, label_data in labels.items():
+    #    if not str(label).startswith("HAPROXY_"):
+    #        continue
+    #    _, idx, action = label.split("_", 2)
+
     k8s_deployment = get_k8s_definition(
         ["create", "deployment", f"--image={image}", name]
     )
     if "cmd" in app and len(app["cmd"]) > 0:
         cmd = app.get("cmd", "").split(" ")
         k8s_deployment["spec"]["template"]["spec"]["containers"][0]["command"] = cmd
+
+    port_mappings = app.get("container", {}).get("portMappings", [])
+    k8s_service = None
+    if len(port_mappings) > 0:
+        ensure_list(
+            "ports", k8s_deployment["spec"]["template"]["spec"]["containers"][0]
+        )
+        k8s_service = {
+            "kind": "Service",
+            "apiVersion": "v1",
+            "metadata": {
+                "name": name,
+                "creationTimestamp": None,
+                "labels": {"app": name},
+            },
+            "spec": {
+                "ports": [],
+                "selector": {"app": name},
+            },
+            "status": {"loadBalancer": {}},
+        }
+    for port_mapping in port_mappings:
+        port = port_mapping.get("containerPort")
+        name = port_mapping.get("name")
+        protocol = port_mapping.get("protocol", "tcp")
+        if not port:
+            continue
+        port_spec = {"containerPort": port}
+        if name:
+            port_spec["name"] = name
+        k8s_deployment["spec"]["template"]["spec"]["containers"][0]["ports"].append(
+            port_spec
+        )
+        k8s_service["spec"]["ports"].append(
+            {"protocol": str(protocol).upper(), "port": port, "targetPort": port}
+        )
 
     if args.limit_resources or args.reserve_resources:
         cpus = app.get("cpus", 0)
@@ -172,6 +214,11 @@ def dcos2k8s(app: Dict, output, args):
     k8s_deployment["spec"]["replicas"] = app.get("instances", 1)
     k8s_yaml = yaml.dump(k8s_deployment, Dumper=yaml.Dumper)
     output.write(k8s_yaml)
+
+    if k8s_service:
+        output.write("---\n")
+        k8s_yaml = yaml.dump(k8s_service, Dumper=yaml.Dumper)
+        output.write(k8s_yaml)
 
 
 def ensure_list(key, dst):
