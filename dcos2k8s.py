@@ -35,8 +35,8 @@ def main() -> None:
 def dcos2k8s(app: Dict, output, args):
     name = app.get("id").strip("/").replace("/", "-")
     image = app.get("container", {}).get("docker", {}).get("image")
-    #labels = app.get("labels", {})
-    #for label, label_data in labels.items():
+    # labels = app.get("labels", {})
+    # for label, label_data in labels.items():
     #    if not str(label).startswith("HAPROXY_"):
     #        continue
     #    _, idx, action = label.split("_", 2)
@@ -49,6 +49,34 @@ def dcos2k8s(app: Dict, output, args):
         k8s_deployment["spec"]["template"]["spec"]["containers"][0]["command"] = cmd
 
     port_mappings = app.get("container", {}).get("portMappings", [])
+    volumes = app.get("container", {}).get("volumes", [])
+    volumes = [v for v in volumes if "secret" in v and "containerPath" in v]
+
+    if len(volumes) > 0:
+        ensure_list(
+            "volumeMounts",
+            k8s_deployment["spec"]["template"]["spec"]["containers"][0],
+        )
+        ensure_list("volumes", k8s_deployment["spec"]["template"]["spec"])
+        k8s_deployment["spec"]["template"]["spec"]["containers"][0][
+            "volumeMounts"
+        ].append(
+            {
+                "name": "secret-files",
+                "mountPath": "/mnt/mesos/sandbox",
+                "readOnly": True,
+            }
+        )
+        items = []
+        for volume in volumes:
+            items.append({"key": volume["secret"], "path": volume["containerPath"]})
+        k8s_deployment["spec"]["template"]["spec"]["volumes"].append(
+            {
+                "name": "secret-files",
+                "secret": {"secretName": f"secret-{name}", "items": items},
+            }
+        )
+
     k8s_service = None
     if len(port_mappings) > 0:
         ensure_list(
@@ -69,19 +97,19 @@ def dcos2k8s(app: Dict, output, args):
             "status": {"loadBalancer": {}},
         }
     for port_mapping in port_mappings:
-        port = port_mapping.get("containerPort")
-        name = port_mapping.get("name")
+        pm_port = port_mapping.get("containerPort")
+        pm_name = port_mapping.get("name")
         protocol = port_mapping.get("protocol", "tcp")
-        if not port:
+        if not pm_port:
             continue
-        port_spec = {"containerPort": port}
-        if name:
-            port_spec["name"] = name
+        port_spec = {"containerPort": pm_port}
+        if pm_name:
+            port_spec["name"] = pm_name
         k8s_deployment["spec"]["template"]["spec"]["containers"][0]["ports"].append(
             port_spec
         )
         k8s_service["spec"]["ports"].append(
-            {"protocol": str(protocol).upper(), "port": port, "targetPort": port}
+            {"protocol": str(protocol).upper(), "port": pm_port, "targetPort": pm_port}
         )
 
     if args.limit_resources or args.reserve_resources:
@@ -181,17 +209,15 @@ def dcos2k8s(app: Dict, output, args):
                     "readOnly": True,
                 }
             )
+            items = []
+            for filename in k8s_fileconfigmap_template["binaryData"].keys():
+                items.append({"key": filename, "path": filename})
             k8s_deployment["spec"]["template"]["spec"]["volumes"].append(
                 {
                     "name": "config-files",
-                    "configMap": {"name": f"config-files-{name}", "items": []},
+                    "configMap": {"name": f"config-files-{name}", "items": items},
                 }
             )
-
-            for filename in k8s_fileconfigmap_template["binaryData"].keys():
-                k8s_deployment["spec"]["template"]["spec"]["volumes"][0]["configMap"][
-                    "items"
-                ].append({"key": filename, "path": filename})
 
             k8s_yaml = yaml.dump(k8s_fileconfigmap_template, Dumper=yaml.Dumper)
             output.write(k8s_yaml)
